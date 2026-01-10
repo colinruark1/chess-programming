@@ -128,7 +128,6 @@ class EngineInterface:
         # Initialize engine
         self.send_command("uci")
         self.wait_for("uciok")
-        self.send_command("ucinewgame")
         self.send_command("isready")
         self.wait_for("readyok")
 
@@ -175,6 +174,23 @@ class EngineInterface:
         else:
             moves_str = ""
         self.send_command(f"position fen {fen}{moves_str}")
+
+    def reset_game(self):
+        """Reset the engine for a new game - single command to initialize everything."""
+        self.send_command("ucinewgame")
+        self.send_command("position startpos")
+        # Reset debug info
+        self.debug_info = {
+            "depth": 0,
+            "score_cp": 0,
+            "time_ms": 0,
+            "nodes": 0,
+            "nps": 0,
+            "pv": "",
+            "tt_hits": 0,
+            "tt_misses": 0,
+            "tt_hit_rate": 0.0
+        }
 
     def parse_info_line(self, line: str):
         """Parse UCI info line and update debug_info."""
@@ -517,7 +533,9 @@ class ChessGUI:
         else:
             self.current_mode = GameMode.COMPUTER_VS_COMPUTER
 
-        # Time control
+        # Time control - store original settings for reset
+        self.initial_time_minutes = time_minutes
+        self.initial_increment_seconds = increment_seconds
         self.time_control = TimeControl(time_minutes, increment_seconds)
 
         # Engine
@@ -934,22 +952,20 @@ class ChessGUI:
 
     def new_game(self):
         """Start a new game."""
+        # Reset board state
         self.board = chess.Board()
         self.selected_square = None
         self.legal_moves = []
         self.move_history = []
         self.game_over_reason = None
-        self.engine.send_command("ucinewgame")
-        self.engine.set_position(self.board.fen())
         self.debug_text = ["New game started"]
 
-        # Reset time control
+        # Reset engine - single command to initialize everything
+        self.engine.reset_game()
+
+        # Reset time control using original settings
+        self.time_control = TimeControl(self.initial_time_minutes, self.initial_increment_seconds)
         if self.time_control.enabled:
-            self.time_control.last_move_time = None
-            # Reset times based on original settings
-            minutes = self.time_control.white_time_ms // (60 * 1000)
-            increment = self.time_control.increment_ms // 1000
-            self.time_control = TimeControl(minutes, increment)
             self.time_control.start_clock()
 
     def flip_board(self):
@@ -969,8 +985,8 @@ class ChessGUI:
         """Main game loop."""
         self.start_engine()
 
-        # Set initial position
-        self.engine.set_position(self.board.fen())
+        # Initialize the engine for the first game
+        self.engine.reset_game()
 
         # Start the clock if time control is enabled
         if self.time_control.enabled:
