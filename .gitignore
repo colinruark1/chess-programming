@@ -1,0 +1,42 @@
+# Compiled class files
+*.class
+build/
+bin/
+
+# JAR files (optional - exclude built JARs but keep library dependencies)
+*.jar
+!libs/*.jar
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+.gradle/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Manifest file (auto-generated)
+manifest.txt
+MANIFEST.MF
+
+# Test and debug files
+Test*.java
+test_*.txt
+test_*.uci
+test_*.sh
+debug_*.sh
+debug_*.txt
+verify_*.sh
+
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+
+# Claude AI artifacts
+.claude/
+
+# Temporary files
+*.zip

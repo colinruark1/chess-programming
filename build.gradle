@@ -1,0 +1,36 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+repositories {
+    flatDir {
+        dirs 'libs'
+    }
+}
+
+dependencies {
+    implementation files('libs/chesslib-1.2.0.jar')
+}
+
+application {
+    mainClass = 'mybot.MyBot'
+}
+
+jar {
+    manifest {
+        attributes(
+            'Main-Class': application.mainClass,
+            'Class-Path': configurations.runtimeClasspath.files.collect { it.name }.join(' ')
+        )
+    }
+
+    doLast {
+        copy {
+            from {
+                configurations.runtimeClasspath
+            }
+            into "$buildDir/libs"
+        }
+    }
+}
