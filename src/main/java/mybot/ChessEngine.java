@@ -16,7 +16,7 @@ public class ChessEngine {
     private static final int MAX_TT_SIZE = 2_000_000;  // Increased from 500K for better hit rate
     private static final int MAX_QUIESCENCE_DEPTH = 20;
     private static final int MAX_PLY = 100;
-    private static final int MIN_GUARANTEED_DEPTH = 4;  // Always complete at least this depth in untimed games
+    private static final int MIN_GUARANTEED_DEPTH = 4;  // Always complete at least this depth, even in timed games
 
     private static final int MATE_SCORE = 100_000;
     private static final int INF        =  99_000; // strictly < MATE_SCORE
@@ -306,9 +306,9 @@ public class ChessEngine {
             // Search all root moves at current depth
             for (Move move : legalMoves) {
                 // Check if time is up BEFORE starting to search a new root move
-                // But always complete at least MIN_GUARANTEED_DEPTH in untimed games
+                // But always complete at least MIN_GUARANTEED_DEPTH
                 boolean shouldStopForTime = timeManager != null && timeManager.isTimeUp() &&
-                                          (goCmd.hasTimeControl() || currentDepth >= MIN_GUARANTEED_DEPTH);
+                                          currentDepth > MIN_GUARANTEED_DEPTH;
                 if (searchStopped || shouldStopForTime) {
                     searchStopped = true;
                     break;
@@ -364,13 +364,10 @@ public class ChessEngine {
             }
 
             // Stop if time is up (even if iteration completed)
-            // But always complete at least MIN_GUARANTEED_DEPTH in untimed games
-            if (timeManager != null && timeManager.isTimeUp()) {
-                if (goCmd.hasTimeControl() || currentDepth >= MIN_GUARANTEED_DEPTH) {
-                    System.out.printf("info string Time limit reached, stopping at depth %d%n", currentDepth);
-                    break;
-                }
-                // In untimed games, continue until MIN_GUARANTEED_DEPTH is reached
+            // But always complete at least MIN_GUARANTEED_DEPTH
+            if (timeManager != null && timeManager.isTimeUp() && currentDepth > MIN_GUARANTEED_DEPTH) {
+                System.out.printf("info string Time limit reached, stopping at depth %d%n", currentDepth);
+                break;
             }
 
             // Stop if we found a mate

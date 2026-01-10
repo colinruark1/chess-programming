@@ -100,7 +100,17 @@ class EngineInterface:
         self.process = None
         self.output_queue = queue.Queue()
         self.reader_thread = None
-        self.debug_info = {"pv": "", "eval": "", "nodes": "", "depth": ""}
+        self.debug_info = {
+            "depth": 0,
+            "score_cp": 0,
+            "time_ms": 0,
+            "nodes": 0,
+            "nps": 0,
+            "pv": "",
+            "tt_hits": 0,
+            "tt_misses": 0,
+            "tt_hit_rate": 0.0
+        }
 
     def start(self):
         """Start the chess engine process."""
@@ -118,6 +128,7 @@ class EngineInterface:
         # Initialize engine
         self.send_command("uci")
         self.wait_for("uciok")
+        self.send_command("ucinewgame")
         self.send_command("isready")
         self.wait_for("readyok")
 
@@ -165,6 +176,58 @@ class EngineInterface:
             moves_str = ""
         self.send_command(f"position fen {fen}{moves_str}")
 
+    def parse_info_line(self, line: str):
+        """Parse UCI info line and update debug_info."""
+        if not line.startswith("info"):
+            return
+
+        tokens = line.split()
+        i = 1
+        while i < len(tokens):
+            if tokens[i] == "depth" and i + 1 < len(tokens):
+                self.debug_info["depth"] = int(tokens[i + 1])
+                i += 2
+            elif tokens[i] == "score" and i + 2 < len(tokens):
+                if tokens[i + 1] == "cp":
+                    self.debug_info["score_cp"] = int(tokens[i + 2])
+                    i += 3
+                elif tokens[i + 1] == "mate":
+                    mate_in = int(tokens[i + 2])
+                    self.debug_info["score_cp"] = 10000 * (1 if mate_in > 0 else -1)
+                    i += 3
+                else:
+                    i += 1
+            elif tokens[i] == "time" and i + 1 < len(tokens):
+                self.debug_info["time_ms"] = int(tokens[i + 1])
+                i += 2
+            elif tokens[i] == "nodes" and i + 1 < len(tokens):
+                self.debug_info["nodes"] = int(tokens[i + 1])
+                i += 2
+            elif tokens[i] == "nps" and i + 1 < len(tokens):
+                self.debug_info["nps"] = int(tokens[i + 1])
+                i += 2
+            elif tokens[i] == "pv":
+                # Everything after "pv" is the principal variation
+                self.debug_info["pv"] = " ".join(tokens[i + 1:i + 6])  # First 5 moves
+                break
+            elif tokens[i] == "string":
+                # Parse custom info strings like "TT hits: ..."
+                rest = " ".join(tokens[i + 1:])
+                if "TT hits:" in rest:
+                    import re
+                    hits_match = re.search(r'hits:\s*(\d+)', rest)
+                    misses_match = re.search(r'misses:\s*(\d+)', rest)
+                    rate_match = re.search(r'hit rate:\s*([\d.]+)', rest)
+                    if hits_match:
+                        self.debug_info["tt_hits"] = int(hits_match.group(1))
+                    if misses_match:
+                        self.debug_info["tt_misses"] = int(misses_match.group(1))
+                    if rate_match:
+                        self.debug_info["tt_hit_rate"] = float(rate_match.group(1))
+                break
+            else:
+                i += 1
+
     def get_best_move(self, timeout_ms: int = 5000) -> Optional[str]:
         """Get the best move from the engine."""
         self.send_command(f"go movetime {timeout_ms}")
@@ -175,7 +238,10 @@ class EngineInterface:
         while time.time() - start < (timeout_ms / 1000.0 + 2.0):
             try:
                 line = self.output_queue.get(timeout=0.1)
-                if line.startswith("bestmove"):
+                # Parse info lines for debug display
+                if line.startswith("info"):
+                    self.parse_info_line(line)
+                elif line.startswith("bestmove"):
                     parts = line.split()
                     if len(parts) >= 2:
                         return parts[1]
@@ -651,16 +717,83 @@ class ChessGUI:
             self.screen.blit(text, (panel_x + 10, y_offset))
             y_offset += 30
 
-        # Principal Variation section (placeholder for future debug info)
-        text = self.font_large.render("Debug Info", True, self.COLOR_TEXT)
+        # Engine Analysis section
+        text = self.font_large.render("Engine Analysis", True, self.COLOR_TEXT)
         self.screen.blit(text, (panel_x + 10, y_offset))
         y_offset += 30
 
-        # Display debug text
-        for line in self.debug_text[-10:]:  # Show last 10 lines
-            text = self.font.render(line[:30], True, (200, 200, 200))  # Truncate long lines
+        # Display structured debug info
+        info = self.engine.debug_info
+
+        # Depth completed
+        depth_text = f"Depth: {info['depth']}"
+        text = self.font.render(depth_text, True, (200, 255, 200))
+        self.screen.blit(text, (panel_x + 10, y_offset))
+        y_offset += 22
+
+        # Evaluation (convert to pawns for display)
+        eval_pawns = info['score_cp'] / 100.0
+        eval_color = (255, 200, 200) if eval_pawns < 0 else (200, 255, 200)
+        if abs(eval_pawns) > 50:  # Mate score
+            eval_text = "Eval: Mate" if eval_pawns > 0 else "Eval: -Mate"
+        else:
+            eval_text = f"Eval: {eval_pawns:+.2f}"
+        text = self.font.render(eval_text, True, eval_color)
+        self.screen.blit(text, (panel_x + 10, y_offset))
+        y_offset += 22
+
+        # Time taken
+        time_sec = info['time_ms'] / 1000.0
+        time_text = f"Time: {time_sec:.2f}s"
+        text = self.font.render(time_text, True, (200, 200, 255))
+        self.screen.blit(text, (panel_x + 10, y_offset))
+        y_offset += 22
+
+        # Nodes searched
+        nodes = info['nodes']
+        if nodes >= 1_000_000:
+            nodes_text = f"Nodes: {nodes/1_000_000:.1f}M"
+        elif nodes >= 1_000:
+            nodes_text = f"Nodes: {nodes/1_000:.1f}K"
+        else:
+            nodes_text = f"Nodes: {nodes}"
+        text = self.font.render(nodes_text, True, (200, 200, 200))
+        self.screen.blit(text, (panel_x + 10, y_offset))
+        y_offset += 22
+
+        # Nodes per second
+        nps = info['nps']
+        if nps >= 1_000_000:
+            nps_text = f"Speed: {nps/1_000_000:.1f}M nps"
+        elif nps >= 1_000:
+            nps_text = f"Speed: {nps/1_000:.0f}K nps"
+        else:
+            nps_text = f"Speed: {nps} nps"
+        text = self.font.render(nps_text, True, (200, 200, 200))
+        self.screen.blit(text, (panel_x + 10, y_offset))
+        y_offset += 22
+
+        # TT hit rate
+        if info['tt_hits'] > 0 or info['tt_misses'] > 0:
+            tt_text = f"TT Hit: {info['tt_hit_rate']:.1f}%"
+            text = self.font.render(tt_text, True, (255, 255, 150))
+            self.screen.blit(text, (panel_x + 10, y_offset))
+            y_offset += 22
+
+        # Principal Variation
+        if info['pv']:
+            y_offset += 5
+            text = self.font.render("PV:", True, self.COLOR_TEXT)
             self.screen.blit(text, (panel_x + 10, y_offset))
             y_offset += 20
+
+            # Display PV moves (may wrap to multiple lines)
+            pv_moves = info['pv'].split()
+            for i in range(0, len(pv_moves), 3):  # 3 moves per line
+                pv_line = " ".join(pv_moves[i:i+3])
+                text = self.font.render(pv_line, True, (180, 180, 180))
+                self.screen.blit(text, (panel_x + 15, y_offset))
+                y_offset += 18
 
     def draw_controls(self):
         """Draw control buttons at the bottom."""
@@ -835,6 +968,9 @@ class ChessGUI:
     def run(self):
         """Main game loop."""
         self.start_engine()
+
+        # Set initial position
+        self.engine.set_position(self.board.fen())
 
         # Start the clock if time control is enabled
         if self.time_control.enabled:
