@@ -5,6 +5,7 @@ import java.util.*;
 public class ChessEngine {
     public Board board;
     public PieceTracker pieceTracker;
+    private NNUE nnue;
 
     // Flat-array TT: two parallel long[] — keys and packed data.
     // Data packing: score(16) | depth(8) | type(2) | unused(22) | move(16)
@@ -53,6 +54,16 @@ public class ChessEngine {
         board = new Board();
         pieceTracker = new PieceTracker();
         pieceTracker.initializeFromBoard(board);
+    }
+
+    public void loadNNUE(String path) {
+        try {
+            nnue = new NNUE();
+            nnue.load(path);
+        } catch (Exception e) {
+            System.err.println("info string NNUE load failed: " + e.getMessage());
+            nnue = null;
+        }
     }
 
     public void printUciId()   { System.out.println("id name MyBot"); System.out.println("id author JavaBotDev"); System.out.println("uciok"); }
@@ -390,8 +401,13 @@ public class ChessEngine {
 
     private int evaluate(int ply) {
         Profiler.start("evaluate");
-        int score = pieceTracker.getMaterialScore();
-        if (board.sideToMove() != Piece.WHITE) score = -score;
+        int score;
+        if (nnue != null && nnue.isReady()) {
+            score = nnue.evaluate(board);
+        } else {
+            score = pieceTracker.getMaterialScore();
+            if (board.sideToMove() != Piece.WHITE) score = -score;
+        }
         Profiler.stop("evaluate");
         return score;
     }
@@ -401,6 +417,8 @@ public class ChessEngine {
     private int see(int move) {
         int toSq   = Move.to(move);
         int fromSq = Move.from(move);
+        // En passant: victim is the pawn behind the destination square
+        if (Move.isEnPassant(move)) return pieceValue(Piece.PAWN);
         int victim = board.pieceAt(toSq);
         if (victim == Piece.EMPTY) return 0;
 

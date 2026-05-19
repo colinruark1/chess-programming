@@ -107,13 +107,26 @@ public final class MoveGenerator {
         long empty = ~occ;
 
         // ── Single pushes ──
+        long singlePush = (us == Piece.WHITE ? Bitboard.northOne(pawns) : Bitboard.southOne(pawns)) & empty;
+        long promoPush  = singlePush & (us == Piece.WHITE ? Bitboard.RANK_8 : Bitboard.RANK_1);
+
+        // Quiet promotions: always searched (huge material swing)
+        long bb = promoPush & checkMask;
+        while (bb != 0) {
+            int to   = Bitboard.lsb(bb); bb = Bitboard.popLsb(bb);
+            int from = us == Piece.WHITE ? to - 8 : to + 8;
+            if ((Bitboard.bit(from) & pinned) != 0 && !onLine(kingSq, from, to)) continue;
+            buf[count++] = Move.of(from, to, Move.PROMO_Q);
+            buf[count++] = Move.of(from, to, Move.PROMO_R);
+            buf[count++] = Move.of(from, to, Move.PROMO_B);
+            buf[count++] = Move.of(from, to, Move.PROMO_N);
+        }
+
         if (!capturesOnly) {
-            long singlePush = (us == Piece.WHITE ? Bitboard.northOne(pawns) : Bitboard.southOne(pawns)) & empty;
-            long promoPush  = singlePush & (us == Piece.WHITE ? Bitboard.RANK_8 : Bitboard.RANK_1);
-            long quietPush  = singlePush & ~(us == Piece.WHITE ? Bitboard.RANK_8 : Bitboard.RANK_1);
+            long quietPush = singlePush & ~(us == Piece.WHITE ? Bitboard.RANK_8 : Bitboard.RANK_1);
 
             // Quiet single push
-            long bb = quietPush & checkMask;
+            bb = quietPush & checkMask;
             while (bb != 0) {
                 int to   = Bitboard.lsb(bb); bb = Bitboard.popLsb(bb);
                 int from = us == Piece.WHITE ? to - 8 : to + 8;
@@ -132,18 +145,6 @@ public final class MoveGenerator {
                 if ((Bitboard.bit(from) & pinned) != 0 && !onLine(kingSq, from, to)) continue;
                 buf[count++] = Move.of(from, to, Move.DOUBLE_PUSH);
             }
-
-            // Promotion (quiet)
-            bb = promoPush & checkMask;
-            while (bb != 0) {
-                int to   = Bitboard.lsb(bb); bb = Bitboard.popLsb(bb);
-                int from = us == Piece.WHITE ? to - 8 : to + 8;
-                if ((Bitboard.bit(from) & pinned) != 0 && !onLine(kingSq, from, to)) continue;
-                buf[count++] = Move.of(from, to, Move.PROMO_Q);
-                buf[count++] = Move.of(from, to, Move.PROMO_R);
-                buf[count++] = Move.of(from, to, Move.PROMO_B);
-                buf[count++] = Move.of(from, to, Move.PROMO_N);
-            }
         }
 
         // ── Captures ──
@@ -152,7 +153,7 @@ public final class MoveGenerator {
         long promoCaps = eastCaps & (us == Piece.WHITE ? Bitboard.RANK_8 : Bitboard.RANK_1);
         long normCaps  = eastCaps & ~(us == Piece.WHITE ? Bitboard.RANK_8 : Bitboard.RANK_1);
 
-        long bb = normCaps & checkMask;
+        bb = normCaps & checkMask;
         while (bb != 0) {
             int to   = Bitboard.lsb(bb); bb = Bitboard.popLsb(bb);
             int from = us == Piece.WHITE ? to - 9 : to + 7;
