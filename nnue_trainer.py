@@ -62,17 +62,23 @@ _rng  = np.random.default_rng(42)
 
 # ft_w[feature_idx, ft_out] – feature_idx in [0, N_KI*768)
 ft_w  = _rng.normal(0, 0.01, (N_KI * 768, FT_WIDTH)).astype(np.float32)
-ft_b  = np.zeros(FT_WIDTH, np.float32)
+# ft_b = 0.5 so accumulators start in the middle of the clipped-ReLU active
+# range [0,1].  With ft_b=0 and std=0.01, accumulators are near 0, half get
+# clipped to 0, the network outputs ~0 before and after training.
+ft_b  = np.full(FT_WIDTH, 0.5, np.float32)
 
 # h1_w[in, out] – input-major, shape [2*FT_WIDTH, L1]
-h1_w  = _rng.normal(0, 0.01, (2 * FT_WIDTH, L1)).astype(np.float32)
-h1_b  = np.zeros(L1, np.float32)
+# He init (fan_in=512) keeps pre-activations in the active range.
+h1_w  = _rng.normal(0, (2 / (2 * FT_WIDTH)) ** 0.5, (2 * FT_WIDTH, L1)).astype(np.float32)
+h1_b  = np.full(L1, 0.5, np.float32)
 
 # h2_w[in, out] – input-major, shape [L1, L2]
-h2_w  = _rng.normal(0, 0.01, (L1, L2)).astype(np.float32)
-h2_b  = np.zeros(L2, np.float32)
+h2_w  = _rng.normal(0, (2 / L1) ** 0.5, (L1, L2)).astype(np.float32)
+h2_b  = np.full(L2, 0.5, np.float32)
 
-out_w = _rng.normal(0, 0.01, L2).astype(np.float32)
+# Output layer initialised small so the network starts near 0 and learns
+# to grow toward ±1 (the WDL targets) rather than saturating immediately.
+out_w = _rng.normal(0, 0.05, L2).astype(np.float32)
 out_b = np.zeros(1, np.float32)
 
 # ─────────────────────────────────────────────────────────────────────────────
