@@ -30,54 +30,69 @@ class GameMode(Enum):
 
 
 class TimeControl:
-    """Manages time controls for timed games."""
+    """Manages time controls for timed games.
+
+    Runs its own background thread so the countdown is independent of both
+    the draw loop and the computer's thinking thread.
+    """
 
     def __init__(self, minutes_per_player: int = 5, increment_seconds: int = 0):
         self.enabled = minutes_per_player > 0
         self.white_time_ms = minutes_per_player * 60 * 1000
         self.black_time_ms = minutes_per_player * 60 * 1000
         self.increment_ms = increment_seconds * 1000
-        self.last_move_time = None
         self.active = False
+        self._active_side = None   # chess.WHITE or chess.BLACK
+        self._last_tick = None
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._thread = None
 
-    def start_clock(self):
-        """Start the clock for the current player."""
-        self.last_move_time = time.time()
-        self.active = True
+    def start_clock(self, side: bool = chess.WHITE):
+        """Start the clock for the given side on a background thread."""
+        with self._lock:
+            self._active_side = side
+            self._last_tick = time.time()
+            self.active = True
+        self._stop_event.clear()
+        if self._thread is None or not self._thread.is_alive():
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
 
     def stop_clock(self):
-        """Stop the clock."""
-        self.active = False
+        """Stop the clock and shut down the background thread."""
+        with self._lock:
+            self.active = False
+        self._stop_event.set()
 
-    def update(self, current_turn: bool) -> Tuple[int, int]:
-        """Update time for current player. Returns (white_time_ms, black_time_ms)."""
-        if not self.enabled or not self.active or self.last_move_time is None:
+    def _run(self):
+        """Background thread: tick every 100 ms."""
+        while not self._stop_event.wait(0.1):
+            with self._lock:
+                if not self.active or self._last_tick is None or self._active_side is None:
+                    continue
+                now = time.time()
+                elapsed_ms = int((now - self._last_tick) * 1000)
+                self._last_tick = now
+                if self._active_side == chess.WHITE:
+                    self.white_time_ms = max(0, self.white_time_ms - elapsed_ms)
+                else:
+                    self.black_time_ms = max(0, self.black_time_ms - elapsed_ms)
+
+    def switch_side(self, new_side: bool, moved_side: bool):
+        """After a move: add increment to the side that moved, start the other side's clock."""
+        with self._lock:
+            if moved_side == chess.WHITE:
+                self.white_time_ms += self.increment_ms
+            else:
+                self.black_time_ms += self.increment_ms
+            self._active_side = new_side
+            self._last_tick = time.time()
+
+    def get_times(self) -> Tuple[int, int]:
+        """Thread-safe snapshot of (white_time_ms, black_time_ms)."""
+        with self._lock:
             return self.white_time_ms, self.black_time_ms
-
-        current_time = time.time()
-        elapsed_ms = int((current_time - self.last_move_time) * 1000)
-
-        if current_turn == chess.WHITE:
-            self.white_time_ms -= elapsed_ms
-            if self.white_time_ms < 0:
-                self.white_time_ms = 0
-        else:
-            self.black_time_ms -= elapsed_ms
-            if self.black_time_ms < 0:
-                self.black_time_ms = 0
-
-        self.last_move_time = current_time
-        return self.white_time_ms, self.black_time_ms
-
-    def add_increment(self, color: bool):
-        """Add increment after a move."""
-        if not self.enabled:
-            return
-
-        if color == chess.WHITE:
-            self.white_time_ms += self.increment_ms
-        else:
-            self.black_time_ms += self.increment_ms
 
     def format_time(self, time_ms: int) -> str:
         """Format time in MM:SS.d format."""
@@ -666,8 +681,7 @@ class ChessGUI:
 
         # Time controls (if enabled)
         if self.time_control.enabled:
-            # Update time
-            white_time, black_time = self.time_control.update(self.board.turn)
+            white_time, black_time = self.time_control.get_times()
 
             # White's time
             white_time_text = f"White: {self.time_control.format_time(white_time)}"
@@ -906,12 +920,9 @@ class ChessGUI:
 
         self.board.push(move)
 
-        # Handle time control
+        # Hand the clock to the next player and add increment for the one who just moved
         if self.time_control.enabled:
-            # Add increment to the player who just moved
-            self.time_control.add_increment(moving_color)
-            # Reset the clock timer for the next player
-            self.time_control.last_move_time = time.time()
+            self.time_control.switch_side(self.board.turn, moving_color)
 
         # Update engine position
         self.engine.set_position(self.board.fen())
@@ -933,8 +944,9 @@ class ChessGUI:
                 if not line.startswith("bestmove"):
                     self.debug_text.append(line[:50])
 
-            # Get best move
-            best_move_str = self.engine.get_best_move(timeout_ms=2000)
+            # Get best move (10s cap for untimed games, 2s for timed)
+            think_ms = 2000 if self.time_control.enabled else 10000
+            best_move_str = self.engine.get_best_move(timeout_ms=think_ms)
 
             if best_move_str and best_move_str != "(none)":
                 try:
@@ -963,10 +975,11 @@ class ChessGUI:
         # Reset engine - single command to initialize everything
         self.engine.reset_game()
 
-        # Reset time control using original settings
+        # Reset time control — stop the old timer thread before replacing
+        self.time_control.stop_clock()
         self.time_control = TimeControl(self.initial_time_minutes, self.initial_increment_seconds)
         if self.time_control.enabled:
-            self.time_control.start_clock()
+            self.time_control.start_clock(side=chess.WHITE)
 
     def flip_board(self):
         """Flip the board view."""
@@ -990,7 +1003,7 @@ class ChessGUI:
 
         # Start the clock if time control is enabled
         if self.time_control.enabled:
-            self.time_control.start_clock()
+            self.time_control.start_clock(side=chess.WHITE)
 
         clock = pygame.time.Clock()
         running = True

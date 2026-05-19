@@ -1,25 +1,17 @@
 package mybot;
 
-import com.github.bhlangonijr.chesslib.*;
-import com.github.bhlangonijr.chesslib.move.Move;
-import com.github.bhlangonijr.chesslib.Board;
-import com.github.bhlangonijr.chesslib.File;
-
-
-import java.util.*;
-
 public class MoveInfo {
-    public final Move move;
-    public final Piece movingPiece;
-    public final Piece capturedPiece;
-    public final PieceType promotionBefore;  // what it was before promotion (if any)
+    public final int move;            // int-encoded move
+    public final int movingPiece;     // Piece code (color<<3|type)
+    public final int capturedPiece;   // Piece.EMPTY if none
+    public final int promotionBefore; // piece type before promotion, Piece.NONE if not a promotion
     public final boolean wasCastling;
     public final boolean wasEnPassant;
-    public final Square epCaptureSquare;     // null for non-EP moves
+    public final int epCaptureSquare; // Sq.NONE for non-EP moves
 
-    public MoveInfo(Move move, Piece movingPiece, Piece capturedPiece,
-                    PieceType promotionBefore, boolean wasCastling, boolean wasEnPassant,
-                    Square epCaptureSquare) {
+    public MoveInfo(int move, int movingPiece, int capturedPiece,
+                    int promotionBefore, boolean wasCastling, boolean wasEnPassant,
+                    int epCaptureSquare) {
         this.move = move;
         this.movingPiece = movingPiece;
         this.capturedPiece = capturedPiece;
@@ -29,17 +21,16 @@ public class MoveInfo {
         this.epCaptureSquare = epCaptureSquare;
     }
 
+    @Override
     public String toString() {
-        String pieceType = switch(movingPiece.getPieceType()) {
-            case QUEEN -> "Q";
-            case ROOK -> "R";
-            case BISHOP -> "B";
-            case KNIGHT -> "N";
-            case PAWN -> "";
-            case KING -> "K";
-            default -> "";
+        String prefix = switch (Piece.type(movingPiece)) {
+            case Piece.QUEEN  -> "Q";
+            case Piece.ROOK   -> "R";
+            case Piece.BISHOP -> "B";
+            case Piece.KNIGHT -> "N";
+            case Piece.KING   -> "K";
+            default           -> "";
         };
-        return pieceType + move.getTo();
+        return prefix + Sq.name(Move.to(move));
     }
-
 }

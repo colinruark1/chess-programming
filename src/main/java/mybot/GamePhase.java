@@ -1,6 +1,5 @@
 package mybot;
 
-import com.github.bhlangonijr.chesslib.Board;
 
 /**
  * Advanced game phase analyzer and search depth calculator.
@@ -190,7 +189,7 @@ public class GamePhase {
         }
 
         // Step 4: Adjust for critical situations
-        if (config.adjustForCheck && board.isKingAttacked()) {
+        if (config.adjustForCheck && board.inCheck()) {
             depth += config.checkDepthBonus;
         }
 
@@ -263,7 +262,7 @@ public class GamePhase {
      */
     private static int adjustForComplexity(int baseDepth, Board board, int pieceCount,
                                           DepthConfig config) {
-        int legalMoveCount = board.legalMoves().size();
+        int legalMoveCount = board.generateLegalMoves().length;
 
         // High branching factor = complex tactical position
         // May need deeper search to see through tactics, but also more expensive
@@ -297,7 +296,7 @@ public class GamePhase {
         int complexity = 0;
 
         // Legal moves factor (0-40 points)
-        int legalMoves = board.legalMoves().size();
+        int legalMoves = board.generateLegalMoves().length;
         complexity += Math.min(40, legalMoves);
 
         // Piece count factor (0-30 points)
@@ -309,7 +308,7 @@ public class GamePhase {
         complexity += imbalanceScore;
 
         // Check/checkmate threat (0-10 points)
-        if (board.isKingAttacked()) {
+        if (board.inCheck()) {
             complexity += 10;
         }
 
@@ -367,7 +366,7 @@ public class GamePhase {
      */
     public static boolean isCriticalPosition(Board board, int absoluteMaterial) {
         // In check
-        if (board.isKingAttacked()) {
+        if (board.inCheck()) {
             return true;
         }
 
@@ -377,7 +376,7 @@ public class GamePhase {
         }
 
         // Very few legal moves (forced play)
-        if (board.legalMoves().size() < 5) {
+        if (board.generateLegalMoves().length < 5) {
             return true;
         }
 

@@ -1,7 +1,6 @@
 /* TimeManager.java */
 package mybot;
 
-import com.github.bhlangonijr.chesslib.Side;
 
 /**
  * Manages time allocation and deadline tracking for iterative deepening.
@@ -24,7 +23,7 @@ public class TimeManager {
      * @param sideToMove which side is moving
      * @param movesPlayed number of moves played in the game
      */
-    public void planTimeForMove(GoCommand goCmd, Side sideToMove, int movesPlayed) {
+    public void planTimeForMove(GoCommand goCmd, int sideToMove, int movesPlayed) {
         startTimeMs = System.currentTimeMillis();
 
         // Handle movetime (fixed time per move)
@@ -42,8 +41,8 @@ public class TimeManager {
         }
 
         // Handle time control (wtime/btime with optional increment)
-        long timeRemainingMs = (sideToMove == Side.WHITE) ? goCmd.whiteTimeMs : goCmd.blackTimeMs;
-        long incrementMs = (sideToMove == Side.WHITE) ? goCmd.whiteIncrementMs : goCmd.blackIncrementMs;
+        long timeRemainingMs = (sideToMove == Piece.WHITE) ? goCmd.whiteTimeMs : goCmd.blackTimeMs;
+        long incrementMs = (sideToMove == Piece.WHITE) ? goCmd.whiteIncrementMs : goCmd.blackIncrementMs;
 
         // Calculate base allocation based on time situation
         if (timeRemainingMs < 500) {

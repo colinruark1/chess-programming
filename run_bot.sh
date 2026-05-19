@@ -1,22 +1,13 @@
 #!/bin/bash
 cd "$(dirname "$0")"
 
-# Create build directories
-mkdir -p build/classes build/libs
+JAR="build/libs/my_bot.jar"
 
-# Compile all Java files in the package directory
-javac -cp libs/chesslib-1.2.0.jar -d build/classes src/main/java/mybot/*.java
+if [ ! -f "$JAR" ] || find src/main/java/mybot -name "*.java" -newer "$JAR" | grep -q .; then
+    echo "Building engine..." >&2
+    mkdir -p build/classes build/libs
+    javac -d build/classes src/main/java/mybot/*.java || exit 1
+    jar cfe "$JAR" mybot.MyBot -C build/classes mybot
+fi
 
-# Create a manifest that sets the main class to mybot.MyBot
-echo "Main-Class: mybot.MyBot" > manifest.txt
-echo "Class-Path: chesslib-1.2.0.jar" >> manifest.txt
-echo "" >> manifest.txt
-
-# Create the JAR with mybot package
-jar cfm build/libs/my_bot.jar manifest.txt -C build/classes mybot
-
-# Copy chesslib dependency to build/libs
-cp libs/chesslib-1.2.0.jar build/libs/
-
-# Run the bot in UCI mode
-java -jar build/libs/my_bot.jar --uci
+java -jar "$JAR" --uci

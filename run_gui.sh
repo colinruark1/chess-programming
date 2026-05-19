@@ -3,12 +3,17 @@
 
 cd "$(dirname "$0")"
 
-# Always use explicit flag to avoid AWT loading issues
-# Check if DISPLAY is set (GUI available)
+JAR="build/libs/my_bot.jar"
+
+if [ ! -f "$JAR" ] || find src/main/java/mybot -name "*.java" -newer "$JAR" | grep -q .; then
+    echo "Building engine..." >&2
+    mkdir -p build/classes build/libs
+    javac -d build/classes src/main/java/mybot/*.java || exit 1
+    jar cfe "$JAR" mybot.MyBot -C build/classes mybot
+fi
+
 if [ -z "$DISPLAY" ]; then
-    # No display - use console mode
-    java -cp "my_bot_gui.jar:libs/chesslib-1.2.0.jar" mybot.MyBot --console
+    java -jar "$JAR" --console
 else
-    # Display available - try GUI mode
-    java -cp "my_bot_gui.jar:libs/chesslib-1.2.0.jar" mybot.MyBot --gui
+    java -jar "$JAR" --gui
 fi

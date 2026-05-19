@@ -1,89 +1,60 @@
 package mybot;
 
-import com.github.bhlangonijr.chesslib.*;
-
 public class TrackedPiece {
-    public PieceType type;
-    public final Side side;
-    public Square position;
-    public Piece piece;
+    public int type;     // Piece.PAWN .. Piece.KING
+    public final int color; // Piece.WHITE or Piece.BLACK
+    public int position;    // square 0-63
+    public int piece;       // full piece code (color<<3|type)
 
     public int baseValue;
     public int pstBonus;
 
-    // --- Preferred constructor for full control
-    public TrackedPiece(PieceType type, Side side, Square position, int baseValue, int pstBonus) {
+    public TrackedPiece(int type, int color, int position, int baseValue, int pstBonus) {
         this.type = type;
-        this.side = side;
+        this.color = color;
         this.position = position;
         this.baseValue = baseValue;
         this.pstBonus = pstBonus;
-        this.piece = Piece.make(side, type);
+        this.piece = Piece.make(color, type);
     }
 
-    // --- Convenience constructor from Board state (deprecated - use full constructor with phase)
-    @Deprecated
-    public TrackedPiece(Piece piece, Square position) {
-        this(piece.getPieceType(), piece.getPieceSide(), position,
-             getBaseValue(piece.getPieceType()),
-             PieceSquareTables.getBonus(piece.getPieceType(), piece.getPieceSide(), position, GamePhase.Phase.OPENING));
-    }
-
-    public void updatePosition(Square newPosition, GamePhase.Phase phase) {
+    public void updatePosition(int newPosition, GamePhase.Phase phase) {
         this.position = newPosition;
-        this.pstBonus = PieceSquareTables.getBonus(type, side, newPosition, phase);
+        this.pstBonus = PieceSquareTables.getBonus(type, color, newPosition, phase);
     }
 
-    public void promoteTo(PieceType newType, GamePhase.Phase phase) {
+    public void promoteTo(int newType, GamePhase.Phase phase) {
         this.type = newType;
         this.baseValue = getBaseValue(newType);
-        this.piece = Piece.make(this.side, newType);
-        this.pstBonus = PieceSquareTables.getBonus(newType, side, position, phase);
+        this.piece = Piece.make(color, newType);
+        this.pstBonus = PieceSquareTables.getBonus(newType, color, position, phase);
     }
 
-    public void demoteTo(PieceType originalType, GamePhase.Phase phase) {
+    public void demoteTo(int originalType, GamePhase.Phase phase) {
         this.type = originalType;
         this.baseValue = getBaseValue(originalType);
-        this.piece = Piece.make(this.side, originalType);
-        this.pstBonus = PieceSquareTables.getBonus(originalType, side, position, phase);
+        this.piece = Piece.make(color, originalType);
+        this.pstBonus = PieceSquareTables.getBonus(originalType, color, position, phase);
     }
-
 
     public int getTotalValue() {
         return baseValue + pstBonus;
     }
 
-    // Returns signed value for material tracking (White perspective)
-    // Base material: White positive, Black negative
-    // PST bonuses: Applied symmetrically - good positions are positive for both sides
-    //              but signed for White-perspective material score
+    /** Returns signed value from White's perspective: positive for White, negative for Black. */
     public int getSignedValue() {
-        if (side == Side.WHITE) {
-            return baseValue + pstBonus;
-        } else {
-            // For Black: negate base value, negate PST bonus
-            // (PST bonuses represent "goodness" from that piece's perspective)
-            return -(baseValue + pstBonus);
-        }
+        int val = baseValue + pstBonus;
+        return color == Piece.WHITE ? val : -val;
     }
 
-    public Square getPosition() {
-        return position;
-    }
-
-    public Piece getPiece() {
-        return piece;
-    }
-
-    public static int getBaseValue(PieceType type) {
+    public static int getBaseValue(int type) {
         return switch (type) {
-            case PAWN -> 100;
-            case KNIGHT -> 320;
-            case BISHOP -> 330;
-            case ROOK -> 500;
-            case QUEEN -> 900;
-            case KING -> 0;
-            default -> 0;
+            case Piece.PAWN   -> 100;
+            case Piece.KNIGHT -> 320;
+            case Piece.BISHOP -> 330;
+            case Piece.ROOK   -> 500;
+            case Piece.QUEEN  -> 900;
+            default           -> 0;
         };
     }
 }
