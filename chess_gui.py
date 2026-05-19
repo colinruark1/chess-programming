@@ -1041,6 +1041,12 @@ class ChessGUI:
 
 
 if __name__ == "__main__":
+    jar = Path(__file__).parent / "build/libs/my_bot.jar"
+    if not jar.exists():
+        print(f"Engine JAR not found: {jar}")
+        print("Run './build.sh' first to compile the engine.")
+        raise SystemExit(1)
+
     # Show setup screen first
     setup = GameSetupScreen()
     settings = setup.run()

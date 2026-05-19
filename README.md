@@ -1,51 +1,54 @@
 # My Chess Bot
 
-A UCI chess engine written in Java with iterative deepening, alpha-beta pruning, adaptive search depth, phase-interpolated piece-square tables, and a Python/PyGame GUI.
+A UCI chess engine written in Java with iterative deepening, alpha-beta pruning, magic-bitboard move generation, phase-interpolated piece-square tables, and a Python/Pygame GUI.
 
 ## Quick Start
 
-### Build
+### Prerequisites
 
+- **Java 17+** — [Download](https://adoptium.net)
+- **Python 3.8+** — [Download](https://python.org) (GUI only)
+
+Verify your versions:
 ```bash
-./run_bot.sh
+java -version
+python3 --version
 ```
 
-Or manually:
-```bash
-javac -cp libs/chesslib-1.2.0.jar -d build/classes src/main/java/mybot/*.java
-jar cfm build/libs/my_bot.jar manifest.txt -C build/classes mybot
-cp libs/chesslib-1.2.0.jar build/libs/
-```
-
-### Play via GUI
+### 1. Install Python dependencies
 
 ```bash
-# Python GUI (recommended)
 pip install -r requirements.txt
-python3 chess_gui.py
+```
 
-# Java Swing GUI
+This installs `pygame` (the GUI) and `python-chess` (board logic and move validation).
+
+### 2. Build the engine
+
+```bash
+./build.sh
+```
+
+Compiles the Java source and produces `build/libs/my_bot.jar`. Re-running only recompiles if source files have changed.
+
+### 3. Play against the bot
+
+```bash
+python3 chess_gui.py
+```
+
+On launch you'll see a setup screen to choose:
+- White / Black player type (Human or Computer)
+- Time control (Untimed or Timed, with increment)
+
+**Java Swing GUI** — simpler built-in interface:
+```bash
 ./run_gui.sh
 ```
 
-### Run as UCI Engine
-
+**Console mode** (no display required):
 ```bash
-java -jar build/libs/my_bot.jar --uci
-```
-
-Compatible with Arena Chess, CuteChess, PyChess, and Lichess Bot integration.
-
-### Test a Position Manually
-
-```bash
-java -jar build/libs/my_bot.jar
-# type UCI commands:
-uci
-isready
-position startpos
-go movetime 2000
-quit
+java -jar build/libs/my_bot.jar --console
 ```
 
 ## Features
@@ -53,14 +56,28 @@ quit
 | Feature | Details |
 |---------|---------|
 | Search | Iterative deepening negamax with alpha-beta pruning |
-| Quiescence | Captures and promotions resolved before evaluating |
-| Transposition table | 2M entries; used for move ordering and avoiding re-search |
-| Move ordering | TT move → promotions → captures (MVV-LVA) → killers → quiet |
-| Adaptive depth | Adjusts based on time, phase, position complexity, and check |
-| Evaluation | Material + phase-interpolated piece-square tables + mobility |
-| Time management | Increment-aware; emergency handling; per-phase allocation |
-| GUI | Python/PyGame and Java Swing; Human vs Human/Computer/Computer |
-| UCI | Full protocol compliance |
+| Quiescence | Captures resolved at leaf nodes to avoid horizon effect |
+| Transposition table | 2M-entry flat array (packed `long[]`); move ordering + re-search avoidance |
+| Move ordering | TT move → promotions → captures (SEE) → killers → quiet |
+| Null-move pruning | R=2+depth/6, skipped in check and pawn-only positions |
+| Evaluation | Material + phase-interpolated piece-square tables |
+| Time management | Increment-aware with emergency low-time handling |
+| Move generation | Magic bitboards for sliders; full pseudo-legal + legality filter |
+| GUI | Python/Pygame and Java Swing; Human vs Human / Computer |
+| UCI | Full protocol: `uci`, `isready`, `position`, `go`, `ucinewgame`, `quit` |
+
+## Run as UCI Engine
+
+To connect to an external GUI (Arena, CuteChess, etc.) or Lichess Bot:
+
+```bash
+./run_bot.sh
+```
+
+Or point your GUI directly at the JAR:
+```
+java -jar /path/to/build/libs/my_bot.jar --uci
+```
 
 ## Project Structure
 
@@ -68,60 +85,66 @@ quit
 chess-programming/
 ├── src/main/java/mybot/
 │   ├── MyBot.java              Entry point; UCI / GUI / console dispatch
-│   ├── ChessEngine.java        Search: negamax, alpha-beta, quiescence
-│   ├── GamePhase.java          Adaptive depth + time management
+│   ├── ChessEngine.java        Search: negamax, alpha-beta, quiescence, TT
+│   ├── Board.java              Bitboard board representation and move making
+│   ├── MoveGenerator.java      Pseudo-legal move generation + legality filter
+│   ├── AttackTables.java       Magic bitboard tables for sliders
+│   ├── Bitboard.java           Bitboard utilities
+│   ├── Move.java               Move encoding (from/to/flags in 16 bits)
+│   ├── Piece.java              Piece type and color constants
+│   ├── Sq.java                 Square constants and utilities
+│   ├── Zobrist.java            Zobrist hashing for TT keys
 │   ├── PieceSquareTables.java  Opening and endgame PSTs
-│   ├── PieceTracker.java       Material counting and piece state
-│   ├── TranspositionEntry.java Transposition table entries
-│   ├── TimeManager.java        Time allocation utilities
+│   ├── PieceTracker.java       Incremental material + PST score tracking
+│   ├── TimeManager.java        Per-move time allocation from UCI go command
+│   ├── GamePhase.java          Opening / middlegame / endgame detection
 │   ├── ChessGUI.java           Java Swing game board
 │   ├── GameSetupGUI.java       Java Swing setup screen
 │   ├── GameSettings.java       Player type / time control config
-│   └── ...
-├── chess_gui.py                Python/PyGame GUI
-├── pieces/                     Chess piece images
-├── libs/chesslib-1.2.0.jar     Chess move generation library
+│   ├── Profiler.java           Timing and memory profiler
+│   ├── Perft.java              Move generation correctness testing
+│   └── Debug.java              Magic bitboard diagnostics
+├── chess_gui.py                Python/Pygame GUI (recommended)
+├── pieces/                     Chess piece PNG images
 ├── build/                      Compiled output (gitignored)
+├── build.sh                    Build the engine JAR only
 ├── run_bot.sh                  Build and run in UCI mode
-├── run_gui.sh                  Launch Java Swing GUI
-├── RUN_TESTS.sh                Run all debug/test scripts
-└── requirements.txt            Python dependencies
+├── run_gui.sh                  Build and launch Java Swing GUI
+├── requirements.txt            Python dependencies (pygame, python-chess)
+└── build.gradle                Gradle build config
 ```
 
 ## Architecture
 
+### Move Generation
+
+The engine uses **magic bitboards** for slider pieces (rooks, bishops, queens). Attack tables are precomputed at startup via `AttackTables.java` and indexed by a magic-multiplied occupancy hash, giving O(1) attack lookups. Pawns, knights, and kings use fixed precomputed tables.
+
 ### Search
 
-The engine uses **negamax with alpha-beta pruning**. Iterative deepening restarts from depth 1 up to 64 each turn, improving the move estimate as time allows. A quiescence search at leaf nodes extends the search through captures and promotions to avoid the horizon effect.
+The engine uses **negamax with alpha-beta pruning**. Iterative deepening restarts from depth 1 each turn, improving the best-move estimate as time allows. Quiescence search at leaf nodes extends through captures to avoid evaluating unstable positions.
 
-Search depth is not fixed — the `GamePhase.calculateDepth()` method computes it from five factors: game phase (opening/middlegame/endgame), remaining time, position complexity (branching factor), whether the side to move is in check, and piece count. See [docs/search.md](docs/search.md) for full details.
+**Pruning techniques:**
+- Alpha-beta cutoffs
+- Null-move pruning (R = 2 + depth/6)
+- Transposition table cutoffs (exact, lower bound, upper bound)
 
 ### Move Ordering
 
-Move ordering is separate from move evaluation. `scoreMove()` assigns ordering priorities purely for search efficiency (which move to search first). The best move is always chosen by the `negamax()` centipawn score, not by ordering priority. This distinction is critical — a transposition table move gets the highest search priority but that does not mean it is the best move. See [docs/search.md#move-ordering](docs/search.md#move-ordering) for details.
+`scoreMove()` assigns ordering priorities for search efficiency only — it does not affect which move is ultimately chosen. Priority order: TT move → queen promotions → winning captures (SEE ≥ 0) → killer moves → losing captures → quiet moves.
 
 ### Evaluation
 
-Evaluation combines material balance with piece-square tables (PSTs). Separate PST tables exist for opening/middlegame and endgame positions. A continuous phase value (0.0 = opening, 1.0 = endgame) is used to interpolate smoothly between them as pieces leave the board.
+Material balance with **incrementally updated piece-square tables** (PSTs). `PieceTracker` maintains the running score as pieces move, so evaluation is O(1) at leaf nodes. Separate PST tables for opening and endgame phases are blended continuously based on remaining material.
 
-### UCI Protocol
+### Transposition Table
 
-`MyBot.java` reads UCI commands from stdin and writes responses to stdout. `ucinewgame` resets state; `position` builds the board; `go` triggers a search and emits `bestmove`. Time parameters (`wtime`, `btime`, `winc`, `binc`) are passed to the adaptive depth calculator.
+The TT uses two parallel `long[]` arrays (keys and packed data) for ~32 MB total, replacing what would be ~200+ MB with Java object overhead. Each entry packs score (16-bit), depth (8-bit), bound type (2-bit), and best move (16-bit) into a single `long`.
 
 ## Dependencies
 
-- [chesslib](https://github.com/bhlangonijr/chesslib) 1.2.0 — included in `libs/`
 - Java 17+
-- Python 3.7+ with `pygame` and `python-chess` (GUI only)
-
-## Documentation
-
-| Doc | Contents |
-|-----|---------|
-| [docs/search.md](docs/search.md) | Adaptive depth, move ordering, evaluation, time management |
-| [docs/gui.md](docs/gui.md) | Python GUI and Java Swing GUI usage and customization |
-| [docs/debugging.md](docs/debugging.md) | Debug scripts, log analysis, common problems |
-| [docs/github-setup.md](docs/github-setup.md) | Git workflow, authentication, branching |
+- Python 3.8+ with `pygame` and `python-chess` (GUI only)
 
 ## License
 
