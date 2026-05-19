@@ -1,5 +1,6 @@
 package mybot;
 
+import java.io.File;
 import java.util.Scanner;
 
 public class MyBot {
@@ -31,10 +32,20 @@ public class MyBot {
         Scanner input = new Scanner(System.in);
         ChessEngine engine = new ChessEngine();
 
+        // Auto-load trained.nnue from the working directory if present
+        File defaultNnue = new File("trained.nnue");
+        if (defaultNnue.exists()) engine.loadNNUE(defaultNnue.getPath());
+
         while (input.hasNextLine()) {
             String line = input.nextLine().trim();
             if (line.equals("uci")) {
                 engine.printUciId();
+            } else if (line.startsWith("setoption")) {
+                // setoption name NNUEPath value <path>
+                if (line.contains("NNUEPath")) {
+                    String[] parts = line.split("value", 2);
+                    if (parts.length == 2) engine.loadNNUE(parts[1].trim());
+                }
             } else if (line.equals("isready")) {
                 engine.printReadyOk();
             } else if (line.equals("eval")) {
