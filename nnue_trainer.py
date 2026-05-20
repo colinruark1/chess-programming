@@ -42,18 +42,47 @@ BATCH_SIZE    = 256
 # Position-filter defaults (overridable via CLI)
 DEFAULT_GAMES      = 5000
 DEFAULT_MIN_ELO    = 2000
-DEFAULT_MAT_DELTA  = 1.5   # max pawn-equivalent imbalance
-DEFAULT_MOVE_LO    = 10    # min full-move number (middlegame)
-DEFAULT_MOVE_HI    = 40    # max full-move number
+DEFAULT_MAT_DELTA  = 100.0  # effectively disabled — balanced-only kills gradient signal
+DEFAULT_MOVE_LO    = 10     # min full-move number (middlegame)
+DEFAULT_MOVE_HI    = 40     # max full-move number
+
+# Target blending: mix game outcome with material score.
+# Material gives a strong, position-specific signal that bootstraps learning;
+# WDL teaches the network to go beyond raw piece counts.
+WDL_WEIGHT = 0.5
+MAT_WEIGHT = 0.5
+
+# Positions sampled per qualifying game (more coverage, faster convergence)
+POSITIONS_PER_GAME = 4
 
 DEFAULT_ZST  = "lichess_db_standard_rated_2024-11.pgn.zst"
 DEFAULT_OUT  = "trained.nnue"
 
-# ── Material values for balance filter ───────────────────────────────────────
+# ── Material values ───────────────────────────────────────────────────────────
 _MAT = {
     chess.PAWN: 1.0, chess.KNIGHT: 3.0, chess.BISHOP: 3.1,
     chess.ROOK: 5.0, chess.QUEEN:  9.0,
 }
+
+# Centipawn values for blended training target
+_MAT_CP = {
+    chess.PAWN: 100, chess.KNIGHT: 310, chess.BISHOP: 330,
+    chess.ROOK: 500, chess.QUEEN:  900,
+}
+
+
+def _material_target(board: chess.Board) -> float:
+    """
+    Material advantage from the side-to-move perspective, normalised to [-1, 1].
+    ±400 cp (roughly a bishop) maps to ±1.0.
+    """
+    cp = sum(
+        v * (len(board.pieces(pt, chess.WHITE)) - len(board.pieces(pt, chess.BLACK)))
+        for pt, v in _MAT_CP.items()
+    )
+    if board.turn == chess.BLACK:
+        cp = -cp
+    return max(-1.0, min(1.0, cp / 400.0))
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Network weights  (module-level, modified in-place throughout training)
@@ -324,7 +353,8 @@ def stream_positions(
 
                 if pool:
                     game_count += 1
-                    yield random.choice(pool), result
+                    for fen in random.sample(pool, min(POSITIONS_PER_GAME, len(pool))):
+                        yield fen, result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -422,8 +452,8 @@ def main() -> None:
         board  = chess.Board(fen)
         stm    = board.turn   # True = WHITE
 
-        # Training target from STM perspective: +1 = stm winning, -1 = losing
-        target = (result - 0.5) * 2.0 * (1.0 if stm else -1.0)
+        wdl_target = (result - 0.5) * 2.0 * (1.0 if stm else -1.0)
+        target     = WDL_WEIGHT * wdl_target + MAT_WEIGHT * _material_target(board)
 
         score, cache = forward(board)
         backward(score, target, cache)
