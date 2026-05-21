@@ -5,7 +5,8 @@ import java.util.*;
 public class ChessEngine {
     public Board board;
     public PieceTracker pieceTracker;
-    private NNUE nnue;
+    private NNUE       nnue;
+    private HCENetwork hceNet;
 
     // Flat-array TT: two parallel long[] — keys and packed data.
     // Data packing: score(16) | depth(8) | type(2) | unused(22) | move(16)
@@ -63,6 +64,16 @@ public class ChessEngine {
         } catch (Exception e) {
             System.err.println("info string NNUE load failed: " + e.getMessage());
             nnue = null;
+        }
+    }
+
+    public void loadHCENetwork(String path) {
+        try {
+            hceNet = new HCENetwork();
+            hceNet.load(path);
+        } catch (Exception e) {
+            System.err.println("info string HCENetwork load failed: " + e.getMessage());
+            hceNet = null;
         }
     }
 
@@ -404,6 +415,9 @@ public class ChessEngine {
         int score;
         if (nnue != null && nnue.isReady()) {
             score = nnue.evaluate(board);
+        } else if (hceNet != null && hceNet.isReady()) {
+            score = hceNet.evaluate(board);
+            if (board.sideToMove() != Piece.WHITE) score = -score;
         } else {
             score = pieceTracker.getMaterialScore();
             if (board.sideToMove() != Piece.WHITE) score = -score;

@@ -32,9 +32,13 @@ public class MyBot {
         Scanner input = new Scanner(System.in);
         ChessEngine engine = new ChessEngine();
 
-        // Auto-load trained.nnue from the working directory if present
+        // Auto-load trained.nnue (NNUE takes priority over HCE network)
         File defaultNnue = new File("trained.nnue");
         if (defaultNnue.exists()) engine.loadNNUE(defaultNnue.getPath());
+
+        // Auto-load hce_network.bin (used as fallback when no NNUE is present)
+        File defaultHce = new File("hce_network.bin");
+        if (defaultHce.exists()) engine.loadHCENetwork(defaultHce.getPath());
 
         while (input.hasNextLine()) {
             String line = input.nextLine().trim();
