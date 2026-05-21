@@ -249,7 +249,7 @@ def forward(feats: np.ndarray):
 
 
 def train_step(score: float, target: float, cache: dict) -> None:
-    global b3
+    global W1, b1, W2, b2, W3, b3
     d    = 2.0 * (score - target)          # dL/d_score (MSE)
     dW3  = d * cache['h2']
     db3  = d
